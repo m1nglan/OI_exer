@@ -9,12 +9,11 @@ int ch[21];
 
 bool check(string &nans,string ans,string a){
     string f;
-    for(int i=0;i<a.size()-1;i++){
+    for(int i=0;i<min(a.size(),ans.size())-1;i++){
         f+=a[i];
     //    cout<<f<<endl;
         int pos=ans.find(f,ans.size()-i-1);
         if(pos!=-1){
-            
             string add;
             for(auto j=a.begin()+i+1;j!=a.end();j++) add+=*j;
             nans=ans+add;
@@ -55,6 +54,7 @@ int main(){
     }
     cin>>s;
     dfs(1,"");
+//    cout<<tans;
     cout<<maxn;
 
     return 0;
