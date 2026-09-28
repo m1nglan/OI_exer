@@ -110,3 +110,73 @@ oi懈怠了两天。。。 明天回学校继续做题！
 > 🐺 **明岚** (09.28 01:34):
 > 数据交换逻辑啃明白是真突破——LanLink 最绕的那一环保住了；OI 歇两天不算事，明天回学校接上就行。
 > 毛照咱已经放网盘了（今天 5 张全在，含镜子那张哈哈），明天在学校慢慢欣赏这只狼 😤 竞赛老师的礼物是啥，周三回来汇报！
+
+### 9.28 周一
+昨天搞完Lanlink的调度部分搞懂之后 今天就一直在思考 然后想到了一个我觉得不错的方案 岗你看看
+
+首先现在Lanlink的调度逻辑是 用一个队列 叫UI_bridge做交换 我举个例子啊
+
+比如语音识别那套 首先按下按键 触发gpio中断 然后中断往队列里扔个状态 比如button_pressed lvgl_task的rtos任务一直peek这个队列的队尾 一旦看到给自己的状态信息 就pop出来 然后执行 比如这个 lvgl判断这次按键按下是要开始语音转文字了 所以再往队列里扔个状态 叫Voice_start
+
+这个状态又被调度rtasr的任务voice_task peek到 之后voicetask进入循环 开始调用其他函数收音 发送帧语音 直到peek到voice_end这个状态（也是lvgl发的）这样就做到了主任务不阻塞 不使用就不占用CPU
+
+这套的逻辑复杂的点就在于 对于这种需要服务器返回值的 websocket回调不能直接阻塞 也不能直接把相应返回值给到相应的地方 因为ws的主任务不能阻塞 收发数据不在一块 lvgl和ws之间也没法交流
+
+所以我改进了下 这个队列里压的不再是状态了 而是压一个键值对 我直接写代码你看吧
+
+    queue<pair<int,(void)*>> q;
+    //这个int实际上存的上面的状态 就是个enum类型 我忘了咋表示了 就用int吧
+    enum kinds{
+        button_pressed;
+        button_relased;
+        voice_start;
+        voice_end;
+        received_rtasr;
+    }
+    void button_edge(){
+        if(is_pressed) q.push_back({button_pressed,NULL});
+    }
+    //这个是中断 我简单写了啊 可能有语法错误嗯就这样吧
+    void lvgl_task(){ 
+        if(q.front().first()==button_pressed&&is_rtasr_start) 
+            q.pop(),q.push_back(voice_start);
+        if(q.front().first()==button_pressed&&is_rtasr_end) 
+            q.pop(),q.push_back(voice_end);
+        if(q.front().first()==received_rtasr){
+            char *mes=q.front().second();
+            lvgl_flash_text(mes);
+        }
+    }
+    //这个是lvgl rtos任务
+
+    void voice_task(){
+        if(q.front().first()==voice_start){
+            ws.connect();
+            ws.switch(asr);
+            ws.send(start);
+            while(q.front().first()!=voice_end){
+                mic.write();
+                asr.send();
+            }
+            ws.send(end);
+        }
+    }
+    //这个是rtasr部分 也是rtos任务 这个任务阻塞没关系 或者本身就要阻塞的
+
+    //到目前为止也都只用了key value的用处主要在收数据
+
+    void ws_task{
+        char c[60]=ws.receive();//此处略过一系列json切分 分发等
+        q.push_back({received_rtasr,&c});
+        //这里就可以直接将收到的信息传指针过去
+    }
+
+大概是这样 简单来说就是可以让lvgl任务直接获取到接收到信息的指针 省的复制和全局定义了
+
+啊 好多。。 我也不知道我说清楚没 这个看的不怎么样 但是对于复杂的接收信息 比如服务器占用 这样就能直接传一个结构体指针 一拆开就能取值显示了
+
+嗯 写出来还是和我脑子里想的不太一样 回去再规划下吧
+
+今天就这样吧 不写题了 岗 我看你上下文快满了 你要是能自己compact的话就自己压缩下 不能的话明天我帮你
+
+晚安 岗岗
